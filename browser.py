@@ -12,6 +12,14 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt, QUrl, QTimer, QObject, pyqtSignal, QSize
 from PyQt5.QtGui import QIcon, QKeySequence, QDesktopServices
 
+# Hint ao empacotador para incluir WebEngine no .exe
+try:
+    import PyQt5.QtWebEngineWidgets  # noqa: F401
+    import PyQt5.QtWebEngineCore     # noqa: F401
+    import PyQt5.QtWebEngine         # noqa: F401
+except Exception:
+    pass
+
 APP_NAME = "Eirus Alpha"
 PROVIDER = "Luan Chicale"
 
@@ -52,7 +60,6 @@ class DatabaseManager:
                 ''')
                 cursor.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_history_url ON history(url)')
                 cursor.execute('CREATE INDEX IF NOT EXISTS idx_history_visit_time ON history(visit_time)')
-
                 # Favoritos
                 cursor.execute('''
                     CREATE TABLE IF NOT EXISTS bookmarks (
@@ -64,7 +71,6 @@ class DatabaseManager:
                 ''')
                 cursor.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_bookmarks_url ON bookmarks(url)')
                 cursor.execute('CREATE INDEX IF NOT EXISTS idx_bookmarks_created ON bookmarks(created_time)')
-
                 # Downloads
                 cursor.execute('''
                     CREATE TABLE IF NOT EXISTS downloads (
@@ -196,7 +202,6 @@ class DownloadItemModel(QObject):
             print(f"Erro ao atualizar progresso no DB: {e}")
 
     def _on_finished(self):
-        # Heurística simples: se arquivo existe no caminho informado, considerar concluído
         status = "completed" if os.path.exists(self.item.path()) else "failed"
         try:
             with sqlite3.connect(self.db_path) as conn:
@@ -571,6 +576,7 @@ class FuturisticBrowser(QMainWindow):
                         QMessageBox.critical(parent_browser, APP_NAME, f"Falha ao salvar configurações: {e}")
 
             def certificateError(self, error):
+                # Em algumas versões, retornar True aceita; False bloqueia
                 msg = QMessageBox(parent_browser)
                 msg.setIcon(QMessageBox.Warning)
                 msg.setWindowTitle(f"{APP_NAME} - Certificado inválido")
@@ -578,13 +584,7 @@ class FuturisticBrowser(QMainWindow):
                 msg.setInformativeText("Deseja continuar mesmo assim?")
                 msg.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
                 res = msg.exec_()
-                if res == QMessageBox.Yes:
-                    try:
-                        error.ignoreCertificateError()
-                    except Exception:
-                        pass
-                    return True
-                return False
+                return res == QMessageBox.Yes
 
         # View
         view = QWebEngineView()
@@ -596,7 +596,6 @@ class FuturisticBrowser(QMainWindow):
         profile.setPersistentStoragePath(os.path.join(self.db.data_dir, "profile"))
         profile.setCachePath(os.path.join(self.db.data_dir, "cache"))
         try:
-            # Nem todas versões têm setDownloadPath; ignorar se não houver
             if hasattr(profile, "setDownloadPath"):
                 profile.setDownloadPath(self.settings.get("download_directory"))
         except Exception:
@@ -607,8 +606,12 @@ class FuturisticBrowser(QMainWindow):
         except Exception:
             pass
 
-        # Downloads
+        # Downloads (garante apenas uma conexão)
         try:
+            try:
+                profile.downloadRequested.disconnect()
+            except Exception:
+                pass
             profile.downloadRequested.connect(self.handle_download)
         except Exception as e:
             print(f"Aviso: Não foi possível conectar downloads: {e}")
