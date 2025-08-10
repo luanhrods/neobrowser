@@ -144,14 +144,30 @@ class TabWidget(QWebEngineView):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.parent_browser = parent
-        self.load_finished.connect(self.on_load_finished)
+        self.setAttribute(Qt.WA_DeleteOnClose, True)
         
+        # Conectar o sinal apenas após a inicialização completa
+        QTimer.singleShot(100, self.setup_connections)
+        
+    def setup_connections(self):
+        """Configura conexões após inicialização completa"""
+        try:
+            if hasattr(self, 'loadFinished'):
+                self.loadFinished.connect(self.on_load_finished)
+            elif hasattr(self, 'load_finished'):
+                self.load_finished.connect(self.on_load_finished)
+        except Exception as e:
+            print(f"Aviso: Não foi possível conectar loadFinished: {e}")
+            
     def on_load_finished(self, ok):
         if ok and self.parent_browser:
-            url = self.url().toString()
-            title = self.title()
-            if url and not url.startswith('data:') and not url.startswith('chrome://'):
-                self.parent_browser.add_to_history(url, title)
+            try:
+                url = self.url().toString()
+                title = self.title()
+                if url and not url.startswith('data:') and not url.startswith('chrome://'):
+                    self.parent_browser.add_to_history(url, title)
+            except Exception as e:
+                print(f"Erro ao adicionar ao histórico: {e}")
 
 class DownloadWidget(QWidget):
     def __init__(self, download_item):
@@ -413,20 +429,56 @@ class FuturisticBrowser(QMainWindow):
         if not url:
             url = self.settings.get("homepage")
             
-        browser = TabWidget(self)
-        
-        # Configurar profile
-        profile = QWebEngineProfile.defaultProfile()
-        profile.downloadRequested.connect(self.handle_download)
-        
-        index = self.tab_widget.addTab(browser, "Nova Aba")
-        self.tab_widget.setCurrentIndex(index)
-        
-        browser.load(QUrl(url))
-        browser.titleChanged.connect(lambda title, browser=browser: self.update_tab_title(browser, title))
-        browser.urlChanged.connect(lambda url, browser=browser: self.update_address_bar(browser, url))
-        
-        return browser
+        try:
+            browser = TabWidget(self)
+            
+            # Configurar profile de forma mais robusta
+            try:
+                profile = QWebEngineProfile.defaultProfile()
+                if hasattr(profile, 'downloadRequested'):
+                    profile.downloadRequested.connect(self.handle_download)
+            except Exception as e:
+                print(f"Aviso: Não foi possível configurar downloads: {e}")
+            
+            index = self.tab_widget.addTab(browser, "Nova Aba")
+            self.tab_widget.setCurrentIndex(index)
+            
+            # Conectar sinais de forma segura
+            try:
+                browser.titleChanged.connect(lambda title, browser=browser: self.update_tab_title(browser, title))
+                browser.urlChanged.connect(lambda url, browser=browser: self.update_address_bar(browser, url))
+            except Exception as e:
+                print(f"Aviso: Não foi possível conectar sinais da aba: {e}")
+            
+            # Carregar URL
+            try:
+                browser.load(QUrl(url))
+            except Exception as e:
+                print(f"Erro ao carregar URL: {e}")
+                # Fallback para página simples
+                browser.setHtml("""
+                    <html><body style='font-family: Arial; text-align: center; padding: 50px;'>
+                        <h1>NeoBrowser</h1>
+                        <p>Bem-vindo ao seu navegador futurístico!</p>
+                        <p>Digite uma URL na barra de endereços para começar.</p>
+                    </body></html>
+                """)
+            
+            return browser
+            
+        except Exception as e:
+            print(f"Erro crítico ao criar nova aba: {e}")
+            # Criar aba básica em caso de erro
+            widget = QWidget()
+            layout = QVBoxLayout()
+            label = QLabel("Erro ao carregar WebEngine. Verifique se PyQtWebEngine está instalado corretamente.")
+            label.setAlignment(Qt.AlignCenter)
+            layout.addWidget(label)
+            widget.setLayout(layout)
+            
+            index = self.tab_widget.addTab(widget, "Erro")
+            self.tab_widget.setCurrentIndex(index)
+            return widget
         
     def close_tab(self, index):
         if self.tab_widget.count() > 1:
@@ -458,30 +510,53 @@ class FuturisticBrowser(QMainWindow):
         url = self.address_bar.text()
         browser = self.tab_widget.currentWidget()
         
-        if not url.startswith('http://') and not url.startswith('https://'):
-            if '.' in url:
-                url = 'https://' + url
-            else:
-                search_engine = self.settings.get("search_engine")
-                url = search_engine + url.replace(' ', '+')
-                
-        browser.load(QUrl(url))
+        if not browser or not hasattr(browser, 'load'):
+            print("Erro: Widget atual não é um navegador web")
+            return
         
+        try:
+            if not url.startswith('http://') and not url.startswith('https://'):
+                if '.' in url and ' ' not in url:
+                    url = 'https://' + url
+                else:
+                    search_engine = self.settings.get("search_engine")
+                    url = search_engine + url.replace(' ', '+')
+                    
+            browser.load(QUrl(url))
+        except Exception as e:
+            print(f"Erro ao navegar para URL: {e}")
+            
     def go_back(self):
         browser = self.tab_widget.currentWidget()
-        browser.back()
+        if browser and hasattr(browser, 'back'):
+            try:
+                browser.back()
+            except Exception as e:
+                print(f"Erro ao voltar: {e}")
         
     def go_forward(self):
         browser = self.tab_widget.currentWidget()
-        browser.forward()
+        if browser and hasattr(browser, 'forward'):
+            try:
+                browser.forward()
+            except Exception as e:
+                print(f"Erro ao avançar: {e}")
         
     def refresh_page(self):
         browser = self.tab_widget.currentWidget()
-        browser.reload()
+        if browser and hasattr(browser, 'reload'):
+            try:
+                browser.reload()
+            except Exception as e:
+                print(f"Erro ao recarregar: {e}")
         
     def go_home(self):
         browser = self.tab_widget.currentWidget()
-        browser.load(QUrl(self.settings.get("homepage")))
+        if browser and hasattr(browser, 'load'):
+            try:
+                browser.load(QUrl(self.settings.get("homepage")))
+            except Exception as e:
+                print(f"Erro ao ir para home: {e}")
         
     def toggle_bookmark(self):
         browser = self.tab_widget.currentWidget()
@@ -1068,43 +1143,69 @@ if __name__ == "__main__":
     sys.excepthook = handle_exception
     
     try:
+        # Inicializar QApplication primeiro
         app = QApplication(sys.argv)
-        
-        # Configurar ícone da aplicação
         app.setApplicationName("NeoBrowser")
         app.setApplicationVersion("1.0")
         app.setOrganizationName("FuturisticSoft")
         
-        # Verificar se PyQt5 WebEngine está disponível
+        # Verificar e inicializar WebEngine
         try:
-            from PyQt5.QtWebEngineWidgets import QWebEngineView
-        except ImportError:
+            from PyQt5.QtWebEngineWidgets import QWebEngineView, QWebEngineProfile
+            from PyQt5.QtCore import QTimer, Qt
+            
+            # Força inicialização do WebEngine
+            QTimer.singleShot(0, lambda: None)
+            
+        except ImportError as e:
             from PyQt5.QtWidgets import QMessageBox
             msg = QMessageBox()
             msg.setIcon(QMessageBox.Critical)
             msg.setWindowTitle("Erro - NeoBrowser")
             msg.setText("PyQt5 WebEngine não encontrado!")
-            msg.setInformativeText("Instale PyQtWebEngine: pip install PyQtWebEngine")
+            msg.setInformativeText("Instale com: pip install PyQtWebEngine")
+            msg.setDetailedText(str(e))
             msg.exec_()
             sys.exit(1)
         
-        # Criar e mostrar o navegador
+        # Criar navegador apenas após verificações
+        print("Iniciando NeoBrowser...")
         browser = FuturisticBrowser()
         browser.show()
         
-        # Executar aplicação
+        print("NeoBrowser iniciado com sucesso!")
         sys.exit(app.exec_())
         
     except Exception as e:
-        print(f"Erro crítico na inicialização: {e}")
+        error_details = f"Erro crítico na inicialização: {str(e)}\n\nDetalhes técnicos:\n{type(e).__name__}"
+        print(error_details)
+        
         try:
             from PyQt5.QtWidgets import QMessageBox, QApplication
             app = QApplication.instance() or QApplication(sys.argv)
             msg = QMessageBox()
             msg.setIcon(QMessageBox.Critical)
             msg.setWindowTitle("Erro Crítico - NeoBrowser")
-            msg.setText(f"Falha na inicialização:\n\n{str(e)}")
-            msg.exec_()
+            msg.setText("Falha na inicialização do NeoBrowser")
+            msg.setInformativeText("Verifique se todas as dependências estão instaladas.")
+            msg.setDetailedText(error_details)
+            
+            # Botões personalizados
+            msg.setStandardButtons(QMessageBox.Ok)
+            retry_btn = msg.addButton("Tentar Novamente", QMessageBox.ActionRole)
+            
+            result = msg.exec_()
+            
+            if msg.clickedButton() == retry_btn:
+                # Tentar novamente com configurações mínimas
+                try:
+                    browser = FuturisticBrowser()
+                    browser.show()
+                    sys.exit(app.exec_())
+                except:
+                    pass
+                    
         except:
-            pass
+            print("Erro crítico: Não foi possível mostrar interface de erro")
+            
         sys.exit(1)
