@@ -1,5 +1,5 @@
 #Adicionar GitHub Action para compilação
-name: Build NeoBrowser
+name: Build EirusAlpha
 
 on:
   push:
@@ -25,13 +25,13 @@ jobs:
     
     - name: Build executable
       run: |
-        pyinstaller --onefile --windowed --name="NeoBrowser" browser.py
+        pyinstaller --onefile --windowed --name="EirusAlpha" browser.py
     
     - name: Upload Windows artifact
       uses: actions/upload-artifact@v4
       with:
-        name: NeoBrowser-Windows
-        path: dist/NeoBrowser.exe
+        name: EirusAlpha-Windows
+        path: dist/EirusAlpha.exe
         retention-days: 30
 
   build-linux:
@@ -57,11 +57,11 @@ jobs:
     
     - name: Build executable
       run: |
-        pyinstaller --onefile --name="NeoBrowser" browser.py
+        pyinstaller --onefile --name="EirusAlpha" browser.py
     
     - name: Upload Linux artifact
       uses: actions/upload-artifact@v4
       with:
-        name: NeoBrowser-Linux
-        path: dist/NeoBrowser
+        name: EirusAlpha-Linux
+        path: dist/EirusAlpha
         retention-days: 30
