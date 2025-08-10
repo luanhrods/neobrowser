@@ -12,54 +12,86 @@ from PyQt5.QtWebEngineWidgets import *
 
 class DatabaseManager:
     def __init__(self):
-        self.db_path = "browser_data.db"
+        # Criar diretório de dados do usuário
+        self.data_dir = self.get_data_directory()
+        os.makedirs(self.data_dir, exist_ok=True)
+        self.db_path = os.path.join(self.data_dir, "browser_data.db")
         self.init_database()
     
+    def get_data_directory(self):
+        """Retorna o diretório apropriado para dados do aplicativo"""
+        if sys.platform == "win32":
+            # Windows: %APPDATA%/NeoBrowser
+            return os.path.join(os.path.expanduser("~"), "AppData", "Roaming", "NeoBrowser")
+        elif sys.platform == "darwin":
+            # macOS: ~/Library/Application Support/NeoBrowser
+            return os.path.join(os.path.expanduser("~"), "Library", "Application Support", "NeoBrowser")
+        else:
+            # Linux: ~/.config/NeoBrowser
+            return os.path.join(os.path.expanduser("~"), ".config", "NeoBrowser")
+    
     def init_database(self):
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        
-        # Tabela de histórico
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS history (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                url TEXT NOT NULL,
-                title TEXT NOT NULL,
-                visit_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                visit_count INTEGER DEFAULT 1
-            )
-        ''')
-        
-        # Tabela de favoritos
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS bookmarks (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                url TEXT NOT NULL UNIQUE,
-                title TEXT NOT NULL,
-                created_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
-        
-        # Tabela de downloads
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS downloads (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                url TEXT NOT NULL,
-                filename TEXT NOT NULL,
-                filepath TEXT NOT NULL,
-                status TEXT DEFAULT 'downloading',
-                size INTEGER DEFAULT 0,
-                downloaded INTEGER DEFAULT 0,
-                start_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
-        
-        conn.commit()
-        conn.close()
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            # Tabela de histórico
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS history (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    url TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    visit_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    visit_count INTEGER DEFAULT 1
+                )
+            ''')
+            
+            # Tabela de favoritos
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS bookmarks (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    url TEXT NOT NULL UNIQUE,
+                    title TEXT NOT NULL,
+                    created_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            
+            # Tabela de downloads
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS downloads (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    url TEXT NOT NULL,
+                    filename TEXT NOT NULL,
+                    filepath TEXT NOT NULL,
+                    status TEXT DEFAULT 'downloading',
+                    size INTEGER DEFAULT 0,
+                    downloaded INTEGER DEFAULT 0,
+                    start_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            
+            conn.commit()
+            conn.close()
+            print(f"Banco de dados inicializado em: {self.db_path}")
+        except Exception as e:
+            print(f"Erro ao inicializar banco de dados: {e}")
+            # Fallback para diretório temporário
+            import tempfile
+            temp_dir = tempfile.gettempdir()
+            self.db_path = os.path.join(temp_dir, "neobrowser_data.db")
+            print(f"Usando diretório temporário: {self.db_path}")
+            try:
+                conn = sqlite3.connect(self.db_path)
+                conn.close()
+            except:
+                print("Erro crítico: Não foi possível criar banco de dados")
 
 class SettingsManager:
     def __init__(self):
-        self.settings_file = "browser_settings.json"
+        # Usar o mesmo diretório de dados do DatabaseManager
+        self.data_dir = self.get_data_directory()
+        os.makedirs(self.data_dir, exist_ok=True)
+        self.settings_file = os.path.join(self.data_dir, "browser_settings.json")
         self.default_settings = {
             "theme_color": "#2D1B69",
             "search_engine": "https://www.google.com/search?q=",
@@ -70,20 +102,36 @@ class SettingsManager:
         }
         self.load_settings()
     
+    def get_data_directory(self):
+        """Retorna o diretório apropriado para dados do aplicativo"""
+        if sys.platform == "win32":
+            # Windows: %APPDATA%/NeoBrowser
+            return os.path.join(os.path.expanduser("~"), "AppData", "Roaming", "NeoBrowser")
+        elif sys.platform == "darwin":
+            # macOS: ~/Library/Application Support/NeoBrowser
+            return os.path.join(os.path.expanduser("~"), "Library", "Application Support", "NeoBrowser")
+        else:
+            # Linux: ~/.config/NeoBrowser
+            return os.path.join(os.path.expanduser("~"), ".config", "NeoBrowser")
+    
     def load_settings(self):
         try:
             if os.path.exists(self.settings_file):
-                with open(self.settings_file, 'r') as f:
+                with open(self.settings_file, 'r', encoding='utf-8') as f:
                     loaded_settings = json.load(f)
                     self.settings = {**self.default_settings, **loaded_settings}
             else:
                 self.settings = self.default_settings.copy()
-        except:
+        except Exception as e:
+            print(f"Erro ao carregar configurações: {e}")
             self.settings = self.default_settings.copy()
     
     def save_settings(self):
-        with open(self.settings_file, 'w') as f:
-            json.dump(self.settings, f, indent=4)
+        try:
+            with open(self.settings_file, 'w', encoding='utf-8') as f:
+                json.dump(self.settings, f, indent=4, ensure_ascii=False)
+        except Exception as e:
+            print(f"Erro ao salvar configurações: {e}")
     
     def get(self, key):
         return self.settings.get(key, self.default_settings.get(key))
@@ -995,16 +1043,68 @@ class FuturisticBrowser(QMainWindow):
         return html
 
 if __name__ == "__main__":
-    app = QApplication(sys.argv)
+    # Configurar tratamento de erros
+    def handle_exception(exc_type, exc_value, exc_traceback):
+        if issubclass(exc_type, KeyboardInterrupt):
+            sys.__excepthook__(exc_type, exc_value, exc_traceback)
+            return
+        
+        error_msg = f"Erro não tratado: {exc_type.__name__}: {exc_value}"
+        print(error_msg)
+        
+        # Mostrar mensagem de erro amigável
+        try:
+            from PyQt5.QtWidgets import QMessageBox, QApplication
+            if QApplication.instance():
+                msg = QMessageBox()
+                msg.setIcon(QMessageBox.Critical)
+                msg.setWindowTitle("Erro - NeoBrowser")
+                msg.setText("Ocorreu um erro inesperado:")
+                msg.setDetailedText(error_msg)
+                msg.exec_()
+        except:
+            pass
     
-    # Configurar ícone da aplicação
-    app.setApplicationName("NeoBrowser")
-    app.setApplicationVersion("1.0")
-    app.setOrganizationName("FuturisticSoft")
+    sys.excepthook = handle_exception
     
-    # Criar e mostrar o navegador
-    browser = FuturisticBrowser()
-    browser.show()
-    
-    # Executar aplicação
-    sys.exit(app.exec_())
+    try:
+        app = QApplication(sys.argv)
+        
+        # Configurar ícone da aplicação
+        app.setApplicationName("NeoBrowser")
+        app.setApplicationVersion("1.0")
+        app.setOrganizationName("FuturisticSoft")
+        
+        # Verificar se PyQt5 WebEngine está disponível
+        try:
+            from PyQt5.QtWebEngineWidgets import QWebEngineView
+        except ImportError:
+            from PyQt5.QtWidgets import QMessageBox
+            msg = QMessageBox()
+            msg.setIcon(QMessageBox.Critical)
+            msg.setWindowTitle("Erro - NeoBrowser")
+            msg.setText("PyQt5 WebEngine não encontrado!")
+            msg.setInformativeText("Instale PyQtWebEngine: pip install PyQtWebEngine")
+            msg.exec_()
+            sys.exit(1)
+        
+        # Criar e mostrar o navegador
+        browser = FuturisticBrowser()
+        browser.show()
+        
+        # Executar aplicação
+        sys.exit(app.exec_())
+        
+    except Exception as e:
+        print(f"Erro crítico na inicialização: {e}")
+        try:
+            from PyQt5.QtWidgets import QMessageBox, QApplication
+            app = QApplication.instance() or QApplication(sys.argv)
+            msg = QMessageBox()
+            msg.setIcon(QMessageBox.Critical)
+            msg.setWindowTitle("Erro Crítico - NeoBrowser")
+            msg.setText(f"Falha na inicialização:\n\n{str(e)}")
+            msg.exec_()
+        except:
+            pass
+        sys.exit(1)
